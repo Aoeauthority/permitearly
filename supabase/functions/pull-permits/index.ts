@@ -99,16 +99,15 @@ Deno.serve(async (req: Request) => {
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const yesterdayStr = yesterday.toISOString().split("T")[0]; // YYYY-MM-DD
 
-  const socrataQuery = new URLSearchParams({
-    $where: `issue_permit_date >= '${yesterdayStr}'`,
-    $limit: "1000",
-    $order: "issue_permit_date DESC",
-  });
+  // Use 7-day window so a single missed day doesn't silence all alerts
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
 
-  console.log(`Fetching permits issued since ${yesterdayStr}...`);
+  const socrataWhere = encodeURIComponent(`issue_permit_date >= '${sevenDaysAgoStr}'`);
+  const fetchUrl = `${SOCRATA_URL}?$where=${socrataWhere}&$limit=1000&$order=issue_permit_date%20DESC`;
 
-  // ── 2. Fetch from Socrata ────────────────────────────────────
-  const fetchUrl = `${SOCRATA_URL}?${socrataQuery.toString()}`;
+  console.log(`Fetching permits issued since ${sevenDaysAgoStr} (url: ${fetchUrl})...`);
   const resp = await fetch(fetchUrl, {
     headers: { Accept: "application/json" },
   });
@@ -121,7 +120,9 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const rawPermits: SocrataPermit[] = await resp.json();
+  const rawText = await resp.text();
+  console.log(`Socrata response (first 300 chars): ${rawText.slice(0, 300)}`);
+  const rawPermits: SocrataPermit[] = JSON.parse(rawText);
   console.log(`Fetched ${rawPermits.length} permits from Socrata.`);
 
   // Log 5 samples for debugging
@@ -198,7 +199,7 @@ Deno.serve(async (req: Request) => {
       .select("*")
       .contains("trades_tagged", [contractor.trade])
       .overlaps("zip_code", contractor.zip_codes) // zip_code is text, not array; handle below
-      .gte("issue_permit_date", yesterdayStr)
+      .gte("issue_permit_date", sevenDaysAgoStr)
       .order("issue_permit_date", { ascending: false });
 
     // zip_code is a single text field — filter in JS since overlaps expects arrays
