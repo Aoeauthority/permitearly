@@ -7,8 +7,8 @@ import { createServiceClient } from "@/lib/supabase";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
-// Next.js App Router: disable body parsing so we can read raw bytes
-export const config = { api: { bodyParser: false } };
+// App Router: tell Next.js not to parse the body (Stripe needs raw bytes)
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const sig = req.headers.get("stripe-signature");
