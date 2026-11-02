@@ -5,10 +5,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase";
+import { getCorsHeaders, corsOptions } from "@/lib/cors";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
+export async function OPTIONS(req: NextRequest) {
+  return corsOptions(req.headers.get("origin"));
+}
+
 export async function POST(req: NextRequest) {
+  const cors = getCorsHeaders(req.headers.get("origin"));
   const body = await req.json();
   const { email, company_name, trade, zip_codes } = body as {
     email: string;
@@ -20,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (!email || !trade || !zip_codes?.length) {
     return NextResponse.json(
       { error: "email, trade, and zip_codes are required" },
-      { status: 400 }
+      { status: 400, headers: cors }
     );
   }
 
@@ -73,8 +79,8 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("Supabase upsert error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500, headers: cors });
   }
 
-  return NextResponse.json({ checkout_url: session.url });
+  return NextResponse.json({ checkout_url: session.url }, { headers: cors });
 }

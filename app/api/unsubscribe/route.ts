@@ -5,10 +5,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase";
+import { getCorsHeaders, corsOptions } from "@/lib/cors";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
+export async function OPTIONS(req: NextRequest) {
+  return corsOptions(req.headers.get("origin"));
+}
+
 export async function POST(req: NextRequest) {
+  const cors = getCorsHeaders(req.headers.get("origin"));
   let email: string | null = null;
 
   // Support both JSON body and URL query param (for email link unsubscribes)
@@ -23,7 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!email) {
-    return NextResponse.json({ error: "email is required" }, { status: 400 });
+    return NextResponse.json({ error: "email is required" }, { status: 400, headers: cors });
   }
 
   const supabase = createServiceClient();
@@ -35,7 +41,7 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error || !contractor) {
-    return NextResponse.json({ error: "Contractor not found" }, { status: 404 });
+    return NextResponse.json({ error: "Contractor not found" }, { status: 404, headers: cors });
   }
 
   if (contractor.stripe_subscription_id) {
@@ -52,7 +58,7 @@ export async function POST(req: NextRequest) {
     .update({ subscription_status: "cancelled" })
     .eq("email", email);
 
-  return NextResponse.json({ ok: true, message: "Unsubscribed successfully." });
+  return NextResponse.json({ ok: true, message: "Unsubscribed successfully." }, { headers: cors });
 }
 
 // Also handle GET for one-click email unsubscribe links

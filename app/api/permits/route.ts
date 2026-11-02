@@ -11,8 +11,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
+import { getCorsHeaders, corsOptions } from "@/lib/cors";
+
+export async function OPTIONS(req: NextRequest) {
+  return corsOptions(req.headers.get("origin"));
+}
 
 export async function GET(req: NextRequest) {
+  const cors = getCorsHeaders(req.headers.get("origin"));
   const { searchParams } = req.nextUrl;
   const emailParam = searchParams.get("email");
   const tradeParam = searchParams.get("trade");
@@ -25,7 +31,7 @@ export async function GET(req: NextRequest) {
   if (!authEmail || !customerId) {
     return NextResponse.json(
       { error: "x-contractor-email and x-stripe-customer-id headers required" },
-      { status: 401 }
+      { status: 401, headers: cors }
     );
   }
 
@@ -40,7 +46,7 @@ export async function GET(req: NextRequest) {
     .single();
 
   if (ctErr || !contractor) {
-    return NextResponse.json({ error: "Contractor not found" }, { status: 401 });
+    return NextResponse.json({ error: "Contractor not found" }, { status: 401, headers: cors });
   }
 
   const isActive = ["active", "trial"].includes(contractor.subscription_status);
@@ -50,7 +56,7 @@ export async function GET(req: NextRequest) {
     new Date(contractor.trial_ends_at) < new Date();
 
   if (!isActive || trialExpired) {
-    return NextResponse.json({ error: "Subscription not active" }, { status: 403 });
+    return NextResponse.json({ error: "Subscription not active" }, { status: 403, headers: cors });
   }
 
   // ── Resolve trade + zips ─────────────────────────────────────
@@ -60,10 +66,9 @@ export async function GET(req: NextRequest) {
   if (emailParam) {
     // Mode 1: look up by ?email= — fetch the named contractor's profile
     if (emailParam !== authEmail) {
-      // Only allow querying your own profile unless service role (not implemented here)
       return NextResponse.json(
         { error: "email param must match authenticated contractor" },
-        { status: 403 }
+        { status: 403, headers: cors }
       );
     }
     trade = contractor.trade;
@@ -74,11 +79,8 @@ export async function GET(req: NextRequest) {
     zips = zipParam.split(",").map((z) => z.trim());
   } else {
     return NextResponse.json(
-      {
-        error:
-          "Provide either ?email= or both ?trade= and ?zip= query params",
-      },
-      { status: 400 }
+      { error: "Provide either ?email= or both ?trade= and ?zip= query params" },
+      { status: 400, headers: cors }
     );
   }
 
@@ -97,11 +99,11 @@ export async function GET(req: NextRequest) {
     .limit(200);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500, headers: cors });
   }
 
   // Filter by zip (zip_code is a text column, not an array)
   const filtered = (permits ?? []).filter((p) => zips.includes(p.zip_code));
 
-  return NextResponse.json({ permits: filtered, total: filtered.length });
+  return NextResponse.json({ permits: filtered, total: filtered.length }, { headers: cors });
 }
