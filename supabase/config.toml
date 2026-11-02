@@ -1,0 +1,23 @@
+# Supabase project configuration
+# See https://supabase.com/docs/guides/cli/config
+
+[api]
+port = 54321
+
+[db]
+port = 54322
+
+[studio]
+port = 54323
+
+[inbucket]
+port = 54324
+
+[functions]
+# Edge functions are in supabase/functions/
+
+[functions.pull-permits]
+verify_jwt = false   # Called by cron scheduler internally
+
+[functions.send-digest]
+verify_jwt = false   # Called by pull-permits internally
