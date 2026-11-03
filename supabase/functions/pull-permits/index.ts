@@ -8,6 +8,114 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SOCRATA_URL =
   "https://data.cityoforlando.net/resource/ryhf-m453.json";
 
+// Orlando neighborhood → ZIP code lookup
+// City of Orlando permits only cover the city limits; many 32819 addresses
+// (Dr. Phillips, Bay Hill) are unincorporated Orange County and won't appear here.
+const NEIGHBORHOOD_TO_ZIP: Record<string, string> = {
+  "33rd St. Industrial": "32839",
+  "Airport North": "32827",
+  "Audubon Park": "32803",
+  "Baldwin Park": "32814",
+  "Bel Air": "32811",
+  "Boggy Creek": "32824",
+  "Bryn Mawr": "32808",
+  "Callahan": "32808",
+  "Carver Shores": "32808",
+  "Catalina": "32807",
+  "Central Business District": "32801",
+  "Clear Lake": "32803",
+  "College Park": "32804",
+  "Colonial Town Center": "32803",
+  "Colonialtown North": "32803",
+  "Colonialtown South": "32803",
+  "Coytown": "32811",
+  "Crescent Park": "32806",
+  "Delaney Park": "32806",
+  "Dixie Belle": "32809",
+  "Dover Estates": "32807",
+  "Dover Manor": "32807",
+  "Dover Shores East": "32807",
+  "Dover Shores West": "32807",
+  "East Park": "32832",
+  "Engelwood Park": "32808",
+  "Florida Center": "32819",
+  "Florida Center North": "32819",
+  "Holden Heights": "32839",
+  "Holden/Parramore": "32805",
+  "Johnson Village": "32808",
+  "Kirkman North": "32811",
+  "Kirkman South": "32811",
+  "Lake Cherokee": "32801",
+  "Lake Como": "32803",
+  "Lake Davis/Greenwood": "32806",
+  "Lake Eola Heights": "32801",
+  "Lake Fairview": "32804",
+  "Lake Formosa": "32804",
+  "Lake Fredrica": "32812",
+  "Lake Holden": "32839",
+  "Lake Mann Gardens": "32839",
+  "Lake Nona Central": "32827",
+  "Lake Nona Estates": "32827",
+  "Lake Nona South": "32827",
+  "Lake Richmond": "32812",
+  "Lake Terrace": "32804",
+  "Lake Weldona": "32804",
+  "Lake Whippoorwill": "32836",
+  "Lancaster Park": "32806",
+  "LaVina": "32811",
+  "Lawsona/Fern Creek": "32803",
+  "Lorna Doone": "32808",
+  "Malibu Groves": "32809",
+  "Mariners Village": "32809",
+  "Mercy Drive": "32839",
+  "Meridian Park": "32824",
+  "Metro West": "32811",
+  "Milk District": "32803",
+  "Millenia": "32839",
+  "Monterey": "32807",
+  "North Orange": "32804",
+  "North Quarter": "32801",
+  "Northlake Park at Lake Nona": "32827",
+  "Orlando Executive Airport": "32803",
+  "ORLANDO INTERNATIONAL AIRPORT": "32827",
+  "Orwin Manor": "32804",
+  "Palomar": "32807",
+  "Park Lake/Highland": "32803",
+  "Pineloch": "32809",
+  "Princeton/Silver Star": "32808",
+  "Randal Park": "32832",
+  "Richmond Estates": "32806",
+  "Richmond Heights": "32806",
+  "Rock Lake": "32803",
+  "Rose Isle": "32804",
+  "Rosemont": "32808",
+  "Rosemont North": "32808",
+  "Rowena Gardens": "32806",
+  "Seaboard Industrial": "32808",
+  "Signal Hill": "32811",
+  "South Division": "32805",
+  "South Eola": "32801",
+  "South Orange": "32801",
+  "South Semoran": "32822",
+  "Southeastern Oaks": "32829",
+  "Southern Oaks": "32809",
+  "Southport": "32809",
+  "Spring Lake": "32804",
+  "Storey Park": "32824",
+  "Sunbridge/ICP": "32832",
+  "The Dovers": "32807",
+  "The Willows": "32811",
+  "Thornton Park": "32801",
+  "Ventura": "32807",
+  "Vista East": "32832",
+  "Vista Park": "32832",
+  "Wadeview Park": "32806",
+  "Washington Shores": "32808",
+  "Wedgewood Groves": "32808",
+  "Westfield": "32804",
+  "Windhover": "32811",
+};
+
 // Trade tagging rules — case-insensitive substring matching
 const TRADE_RULES: Array<{ trade: string; keywords: string[] }> = [
   {
@@ -78,10 +186,18 @@ function tagTrades(permit: SocrataPermit): string[] {
   return tagged;
 }
 
-function extractZip(address: string | undefined): string | null {
+function extractZip(address: string | undefined, neighborhood: string | undefined): string | null {
+  // Primary: look up ZIP from neighborhood name (most reliable for City of Orlando data)
+  if (neighborhood) {
+    const zip = NEIGHBORHOOD_TO_ZIP[neighborhood];
+    if (zip) return zip;
+  }
+  // Fallback: try to extract a 5-digit ZIP embedded in the address string
   if (!address) return null;
   const m = address.match(/\b(\d{5})\b/g);
-  return m ? m[m.length - 1] : null;
+  // Only trust it if it looks like a real FL ZIP (3xxxx) not a street number
+  const candidates = (m ?? []).filter((z) => z.startsWith("3"));
+  return candidates.length > 0 ? candidates[candidates.length - 1] : null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -136,7 +252,7 @@ Deno.serve(async (req: Request) => {
     permit_number: p.permit_number ?? null,
     permit_address: p.permit_address ?? null,
     neighborhood: p.neighborhood ?? null,
-    zip_code: extractZip(p.permit_address),
+    zip_code: extractZip(p.permit_address, p.neighborhood),
     application_type: p.application_type ?? null,
     worktype: p.worktype ?? null,
     estimated_cost: p.estimated_cost ? parseFloat(p.estimated_cost) : null,
