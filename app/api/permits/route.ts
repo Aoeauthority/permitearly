@@ -2,12 +2,10 @@
 //
 // Mode 1 — lookup by email (contractor profile):
 //   ?email=contractor@example.com
-//   Headers: x-contractor-email + x-stripe-customer-id  (auth)
 //   Looks up contractor's trade + zip_codes, returns matching permits from last 7 days.
 //
-// Mode 2 — explicit trade + zip:
+// Mode 2 — explicit trade + zip (no account needed):
 //   ?trade=roofing&zip=32801,32803
-//   Same auth headers required.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase";
@@ -24,53 +22,34 @@ export async function GET(req: NextRequest) {
   const tradeParam = searchParams.get("trade");
   const zipParam = searchParams.get("zip");
 
-  // Auth: contractor must pass their email + stripe_customer_id
-  const authEmail = req.headers.get("x-contractor-email");
-  const customerId = req.headers.get("x-stripe-customer-id");
-
-  if (!authEmail || !customerId) {
-    return NextResponse.json(
-      { error: "x-contractor-email and x-stripe-customer-id headers required" },
-      { status: 401, headers: cors }
-    );
-  }
-
   const supabase = createServiceClient();
-
-  // Verify contractor is active/trial
-  const { data: contractor, error: ctErr } = await supabase
-    .from("contractors")
-    .select("id, trade, zip_codes, subscription_status, trial_ends_at")
-    .eq("email", authEmail)
-    .eq("stripe_customer_id", customerId)
-    .single();
-
-  if (ctErr || !contractor) {
-    return NextResponse.json({ error: "Contractor not found" }, { status: 401, headers: cors });
-  }
-
-  const isActive = ["active", "trial"].includes(contractor.subscription_status);
-  const trialExpired =
-    contractor.subscription_status === "trial" &&
-    contractor.trial_ends_at &&
-    new Date(contractor.trial_ends_at) < new Date();
-
-  if (!isActive || trialExpired) {
-    return NextResponse.json({ error: "Subscription not active" }, { status: 403, headers: cors });
-  }
 
   // ── Resolve trade + zips ─────────────────────────────────────
   let trade: string;
   let zips: string[];
 
   if (emailParam) {
-    // Mode 1: look up by ?email= — fetch the named contractor's profile
-    if (emailParam !== authEmail) {
-      return NextResponse.json(
-        { error: "email param must match authenticated contractor" },
-        { status: 403, headers: cors }
-      );
+    // Mode 1: look up contractor by email
+    const { data: contractor, error: ctErr } = await supabase
+      .from("contractors")
+      .select("id, trade, zip_codes, subscription_status, trial_ends_at")
+      .eq("email", emailParam)
+      .single();
+
+    if (ctErr || !contractor) {
+      return NextResponse.json({ error: "No account found for that email" }, { status: 404, headers: cors });
     }
+
+    const isActive = ["active", "trial"].includes(contractor.subscription_status);
+    const trialExpired =
+      contractor.subscription_status === "trial" &&
+      contractor.trial_ends_at &&
+      new Date(contractor.trial_ends_at) < new Date();
+
+    if (!isActive || trialExpired) {
+      return NextResponse.json({ error: "Subscription not active" }, { status: 403, headers: cors });
+    }
+
     trade = contractor.trade;
     zips = contractor.zip_codes;
   } else if (tradeParam && zipParam) {
